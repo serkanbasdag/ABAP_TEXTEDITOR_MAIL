@@ -1,0 +1,133 @@
+REPORT ZSERKAN_O_TEXTEDITOR.
+
+   DATA: LINE_LENGTH      TYPE I VALUE 254,
+         EDITOR_CONTAINER TYPE REF TO CL_GUI_CUSTOM_CONTAINER,
+         TEXT_EDITOR      TYPE REF TO CL_GUI_TEXTEDIT,
+         TEXT             TYPE STRING.
+
+
+    DATA: objcont LIKE solisti1 OCCURS 0 WITH HEADER LINE.
+    DATA: reclist LIKE somlreci1 OCCURS 0 WITH HEADER LINE.
+    DATA: doc_chng LIKE sodocchgi1.
+    DATA: ad_soyad(24), email(30), adS(25).
+
+ START-OF-SELECTION.
+
+  CALL SCREEN '0100'.
+*&---------------------------------------------------------------------*
+*&      Module  STATUS_0100  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE STATUS_0100 OUTPUT.
+  SET PF-STATUS 'PF'.
+  SET TITLEBAR 'TITLE'.
+
+  IF TEXT_EDITOR IS INITIAL.
+
+    CREATE OBJECT EDITOR_CONTAINER
+      EXPORTING
+        CONTAINER_NAME              = 'TEXTEDITOR'
+      EXCEPTIONS
+        CNTL_ERROR                  = 1
+        CNTL_SYSTEM_ERROR           = 2
+        CREATE_ERROR                = 3
+        LIFETIME_ERROR              = 4
+        LIFETIME_DYNPRO_DYNPRO_LINK = 5.
+
+    CREATE OBJECT TEXT_EDITOR
+      EXPORTING
+        PARENT                     = EDITOR_CONTAINER
+        WORDWRAP_MODE              = CL_GUI_TEXTEDIT=>WORDWRAP_AT_FIXED_POSITION
+        WORDWRAP_POSITION          = LINE_LENGTH
+        WORDWRAP_TO_LINEBREAK_MODE = CL_GUI_TEXTEDIT=>TRUE.
+
+        CALL METHOD TEXT_EDITOR->SET_TOOLBAR_MODE
+      EXPORTING
+        TOOLBAR_MODE = CL_GUI_TEXTEDIT=>FALSE.
+
+    CALL METHOD TEXT_EDITOR->SET_STATUSBAR_MODE
+      EXPORTING
+        STATUSBAR_MODE = CL_GUI_TEXTEDIT=>FALSE.
+  ENDIF.
+
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0100  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE USER_COMMAND_0100 INPUT.
+
+  CASE SY-UCOMM.
+    WHEN 'BACK' OR 'CANCEL' OR 'EXIT'.
+      LEAVE TO SCREEN 0.
+    WHEN 'FCT_SEND'.
+      PERFORM send.
+  ENDCASE.
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*&      Form  SEND
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM SEND.
+
+CALL METHOD TEXT_EDITOR->GET_TEXTSTREAM
+
+          IMPORTING
+              TEXT                   = TEXT
+          EXCEPTIONS
+              ERROR_CNTL_CALL_METHOD = 1
+              NOT_SUPPORTED_BY_GUI   = 2
+              OTHERS                 = 3.
+
+      IF SY-SUBRC <> 0.
+        MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+                   WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+      ENDIF.
+
+      CALL METHOD CL_GUI_CFW=>FLUSH
+        EXCEPTIONS
+          CNTL_SYSTEM_ERROR = 1
+          CNTL_ERROR        = 2
+          OTHERS            = 3.
+
+* Email subject line
+doc_chng-obj_descr = 'IDECON'.
+
+* Email body
+CONCATENATE 'Ad Soyad: ' ad_soyad INTO adS.
+APPEND adS to objcont.
+APPEND TEXT to objcont.
+
+* Receiver list
+reclist-receiver = email.
+reclist-rec_type = 'U'.
+APPEND reclist.
+
+* Send the document
+CALL FUNCTION 'SO_NEW_DOCUMENT_SEND_API1'
+EXPORTING
+document_data = doc_chng
+commit_work = 'X'
+TABLES
+object_content = objcont
+receivers = reclist
+EXCEPTIONS
+too_many_receivers = 1
+document_not_sent = 2
+operation_no_authorization = 4
+OTHERS = 99.
+
+IF sy-subrc <> 0.
+MESSAGE 'Email gönderimi başarısız.' TYPE 'S'.
+ELSE.
+MESSAGE 'Email gönderimi başarılı.' TYPE 'S'.
+ENDIF.
+
+
+ENDFORM.
